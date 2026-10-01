@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>আমার CRM (Auto Sync)</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 700px;
+      margin: 20px auto;
+      padding: 0 15px;
+      background: #f3f4f6;
+      color: #222;
+    }
+    h1 { color: #1d4ed8; }
+    .box {
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    .stats {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 15px;
+    }
+    .stat {
+      flex: 1;
+      min-width: 120px;
+      background: #eff6ff;
+      border-radius: 8px;
+      padding: 10px;
+      text-align: center;
+    }
+    .stat .songkha {
+      font-size: 28px;
+      font-weight: bold;
+      color: #1d4ed8;
+    }
+    .phone-list p {
+      margin: 6px 0;
+      padding: 6px 8px;
+      background: #fee2e2;
+      border-radius: 4px;
+    }
+    .card {
+      background: white;
+      border: 1px solid #ddd;
+      border-left: 5px solid #1d4ed8;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    .card h3 { margin: 0 0 8px 0; }
+    .card .tothya { margin: 3px 0; font-size: 14px; }
+    .note {
+      background: #fef9c3;
+      padding: 6px 8px;
+      margin: 4px 0;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    input, select {
+      padding: 6px;
+      margin: 3px 0;
+    }
+    button {
+      padding: 6px 12px;
+      border: none;
+      border-radius: 4px;
+      background: #1d4ed8;
+      color: white;
+      cursor: pointer;
+    }
+    button.lal { background: #dc2626; }
+    button.dhusor { background: #6b7280; }
+    button.sobuj { background: #16a34a; }
+    .jaruri { color: red; font-weight: bold; }
+    .status-bar {
+      font-size: 13px;
+      margin-top: -10px;
+      margin-bottom: 15px;
+      color: #059669;
+      font-weight: bold;
+    }
+  </style>
+
+  <!-- Firebase SDK Links -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+</head>
+<body>
+  <h1>আমার CRM</h1>
+  <div class="status-bar" id="syncStatus">🔄 ডাটাবেজ কানেক্ট হচ্ছে...</div>
+
+  <!-- ড্যাশবোর্ড -->
+  <div class="box">
+    <h2>ড্যাশবোর্ড</h2>
+    <div class="stats">
+      <div class="stat"><div class="songkha" id="motSongkha">0</div>মোট গ্রাহক</div>
+      <div class="stat"><div class="songkha" id="notunSongkha">0</div>নতুন লিড</div>
+      <div class="stat"><div class="songkha" id="alochonaSongkha">0</div>আলোচনা চলছে</div>
+      <div class="stat"><div class="songkha" id="bikriSongkha">0</div>বিক্রি হয়েছে</div>
+    </div>
+    <h3>আজ যাদের ফোন করতে হবে</h3>
+    <div class="phone-list" id="ajkerKaj"></div>
+  </div>
+
+  <!-- ব্যাকআপ ও এক্সেল -->
+  <div class="box">
+    <h2>ব্যাকআপ ও এক্সেল</h2>
+    <button onclick="backupNao()">ব্যাকআপ নিন (ডাউনলোড)</button>
+    <button class="sobuj" onclick="excelEksport()">এক্সেলে এক্সপোর্ট (CSV)</button>
+    <p>ব্যাকআপ থেকে ফিরিয়ে আনুন: <input type="file" accept=".json" onchange="phireAno(event)"></p>
+  </div>
+
+  <div class="box">
+    <h2>নতুন গ্রাহক যোগ করুন</h2>
+    <p>নাম: <input type="text" id="naam"></p>
+    <p>ফোন: <input type="text" id="phone"></p>
+    <p>ইমেইল: <input type="text" id="email"></p>
+    <p>ঠিকানা: <input type="text" id="thikana" size="35"></p>
+    <p>স্ট্যাটাস:
+      <select id="status">
+        <option>নতুন লিড</option>
+        <option>আলোচনা চলছে</option>
+        <option>বিক্রি হয়েছে</option>
+      </select>
+    </p>
+    <p>পরবর্তী ফলো-আপ: <input type="date" id="followup"></p>
+    <button onclick="jogKoro()">যোগ করুন</button>
+  </div>
+
+  <h2>গ্রাহকের তালিকা</h2>
+  <p>সার্চ: <input type="text" id="search" oninput="dekhao()" placeholder="নাম, ফোন বা ইমেইল"></p>
+  <div id="talika"></div>
+
+  <script>
+    // -------------------------------------------------------------
+    // ১. আপনার Firebase কনফিগারেশন তথ্যগুলো এখানে বসিয়ে দিন
+    // -------------------------------------------------------------
+    const // Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyAsVHG_OWgnoVVA0TNscl4Zrcgyt4k8eDk",
+  authDomain: "sujon-2b8d3.firebaseapp.com",
+  projectId: "sujon-2b8d3",
+  storageBucket: "sujon-2b8d3.firebasestorage.app",
+  messagingSenderId: "141940786335",
+  appId: "1:141940786335:web:6c96c5e3bf5357e1350eaa",
+  measurementId: "G-XLT0WDN8Z9"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app); = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+      databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT_ID.appspot.com",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId: "YOUR_APP_ID"
+    };
+
+    // Firebase ইনিশিয়ালাইজেশন
+    firebase.initializeApp(// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyAsVHG_OWgnoVVA0TNscl4Zrcgyt4k8eDk",
+  authDomain: "sujon-2b8d3.firebaseapp.com",
+  projectId: "sujon-2b8d3",
+  storageBucket: "sujon-2b8d3.firebasestorage.app",
+  messagingSenderId: "141940786335",
+  appId: "1:141940786335:web:6c96c5e3bf5357e1350eaa",
+  measurementId: "G-XLT0WDN8Z9"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+    const db = firebase.database();
+    const dbRef = db.ref("grahokera");
+
+    var grahokera = [];
+    var sobStatus = ["নতুন লিড", "আলোচনা চলছে", "বিক্রি হয়েছে"];
+
+    // রিয়েল-টাইম ডাটাবেজ থেকে তথ্য আনা (Auto-sync)
+    dbRef.on("value", function(snapshot) {
+      var data = snapshot.val();
+      grahokera = data ? data : [];
+      document.getElementById("syncStatus").textContent = "🟢 ক্লাউড ডাটাবেজ লাইভ (Auto Sync অন)";
+      dekhao();
+    }, function(error) {
+      document.getElementById("syncStatus").textContent = "🔴 কানেকশন সমস্যা! Firebase Config ঠিক আছে কি না চেক করুন।";
+    });
+
+    function sheveKoro() {
+      dbRef.set(grahokera);
+    }
+
+    function ajkerTarikh() {
+      var d = new Date();
+      var m = d.getMonth() + 1;
+      var dn = d.getDate();
+      if (m < 10) { m = "0" + m; }
+      if (dn < 10) { dn = "0" + dn; }
+      return d.getFullYear() + "-" + m + "-" + dn;
+    }
+
+    function dashboardDekhao() {
+      var ajke = ajkerTarikh();
+      var notun = 0;
+      var alochona = 0;
+      var bikri = 0;
+      var ajkerKajer = [];
+
+      for (var i = 0; i < grahokera.length; i++) {
+        var g = grahokera[i];
+        if (!g) continue;
+        var st = g.status || "নতুন লিড";
+
+        if (st == "নতুন লিড") { notun++; }
+        if (st == "আলোচনা চলছে") { alochona++; }
+        if (st == "বিক্রি হয়েছে") { bikri++; }
+
+        if (g.followup && g.followup <= ajke && st != "বিক্রি হয়েছে") {
+          ajkerKajer.push(g);
+        }
+      }
+
+      document.getElementById("motSongkha").textContent = grahokera.length;
+      document.getElementById("notunSongkha").textContent = notun;
+      document.getElementById("alochonaSongkha").textContent = alochona;
+      document.getElementById("bikriSongkha").textContent = bikri;
+
+      var jayga = document.getElementById("ajkerKaj");
+      jayga.innerHTML = "";
+
+      if (ajkerKajer.length == 0) {
+        jayga.textContent = "আজ কোনো ফলো-আপ বাকি নেই 🎉";
+        return;
+      }
+
+      for (var k = 0; k < ajkerKajer.length; k++) {
+        var p = document.createElement("p");
+        var kaj = ajkerKajer[k];
+        p.textContent = kaj.naam + " - " + (kaj.phone || "");
+        if (kaj.followup < ajke) {
+          p.textContent += " (তারিখ ছিল " + kaj.followup + ", দেরি হয়েছে)";
+        }
+        jayga.appendChild(p);
+      }
+    }
+
+    function tothyaLine(card, chinho, lekha, link) {
+      if (!lekha) { return; }
+      var p = document.createElement("p");
+      p.className = "tothya";
+      p.appendChild(document.createTextNode(chinho + " "));
+      if (link) {
+        var a = document.createElement("a");
+        a.href = link + lekha;
+        a.textContent = lekha;
+        p.appendChild(a);
+      } else {
+        p.appendChild(document.createTextNode(lekha));
+      }
+      card.appendChild(p);
+    }
+
+    function dekhao() {
+      dashboardDekhao();
+
+      var talika = document.getElementById("talika");
+      var khujun = document.getElementById("search").value.toLowerCase();
+      var ajke = ajkerTarikh();
+      talika.innerHTML = "";
+
+      for (var i = 0; i < grahokera.length; i++) {
+        var g = grahokera[i];
+        if (!g) continue;
+
+        var sobLekha = (g.naam + " " + (g.phone || "") + " " + (g.email || "")).toLowerCase();
+        if (sobLekha.indexOf(khujun) == -1) {
+          continue;
+        }
+
+        var card = document.createElement("div");
+        card.className = "card";
+
+        var shirshak = document.createElement("h3");
+        shirshak.textContent = g.naam;
+        card.appendChild(shirshak);
+
+        tothyaLine(card, "📞", g.phone, "tel:");
+        tothyaLine(card, "✉️", g.email, "mailto:");
+        tothyaLine(card, "📍", g.thikana, "");
+
+        var sel = document.createElement("select");
+        for (var j = 0; j < sobStatus.length; j++) {
+          var op = document.createElement("option");
+          op.textContent = sobStatus[j];
+          sel.appendChild(op);
+        }
+        sel.value = g.status || "নতুন লিড";
+        sel.setAttribute("onchange", "statusBodlao(" + i + ", this.value)");
+        card.appendChild(sel);
+
+        var tarikh = document.createElement("p");
+        if (g.followup) {
+          tarikh.textContent = "ফলো-আপ: " + g.followup;
+          if (g.followup <= ajke && g.status != "বিক্রি হয়েছে") {
+            tarikh.className = "jaruri";
+            tarikh.textContent += " (ফলো-আপ করুন!)";
+          }
+        } else {
+          tarikh.textContent = "ফলো-আপ: ঠিক করা নেই";
+        }
+        card.appendChild(tarikh);
+
+        var tarikhGhor = document.createElement("input");
+        tarikhGhor.type = "date";
+        tarikhGhor.value = g.followup || "";
+        tarikhGhor.setAttribute("onchange", "followupBodlao(" + i + ", this.value)");
+        card.appendChild(document.createTextNode("তারিখ বদলান: "));
+        card.appendChild(tarikhGhor);
+
+        var notes = g.notes || [];
+        for (var k = 0; k < notes.length; k++) {
+          var n = document.createElement("div");
+          n.className = "note";
+          n.textContent = notes[k].tarikh + ": " + notes[k].lekha;
+          card.appendChild(n);
+        }
+
+        var noteGhor = document.createElement("input");
+        noteGhor.type = "text";
+        noteGhor.id = "note" + i;
+        noteGhor.placeholder = "নতুন নোট লিখুন";
+        card.appendChild(noteGhor);
+
+        var noteBtn = document.createElement("button");
+        noteBtn.textContent = "নোট যোগ";
+        noteBtn.setAttribute("onclick", "noteJog(" + i + ")");
+        card.appendChild(document.createTextNode(" "));
+        card.appendChild(noteBtn);
+
+        var editBtn = document.createElement("button");
+        editBtn.textContent = "এডিট";
+        editBtn.className = "dhusor";
+        editBtn.setAttribute("onclick", "editKoro(" + i + ")");
+        card.appendChild(document.createTextNode(" "));
+        card.appendChild(editBtn);
+
+        var btn = document.createElement("button");
+        btn.textContent = "গ্রাহক মুছুন";
+        btn.className = "lal";
+        btn.setAttribute("onclick", "muchhe(" + i + ")");
+        card.appendChild(document.createTextNode(" "));
+        card.appendChild(btn);
+
+        talika.appendChild(card);
+      }
+    }
+
+    function jogKoro() {
+      var naam = document.getElementById("naam").value.trim();
+      var phone = document.getElementById("phone").value.trim();
+      var email = document.getElementById("email").value.trim();
+      var thikana = document.getElementById("thikana").value.trim();
+      var status = document.getElementById("status").value;
+      var followup = document.getElementById("followup").value;
+
+      if (naam == "") {
+        alert("নাম লিখুন");
+        return;
+      }
+
+      if (email != "" && (email.indexOf("@") == -1 || email.indexOf(".") == -1)) {
+        alert("ইমেইলটি ঠিক মনে হচ্ছে না। আবার দেখুন।");
+        return;
+      }
+
+      grahokera.push({
+        naam: naam,
+        phone: phone,
+        email: email,
+        thikana: thikana,
+        status: status,
+        followup: followup,
+        notes: []
+      });
+      sheveKoro();
+
+      document.getElementById("naam").value = "";
+      document.getElementById("phone").value = "";
+      document.getElementById("email").value = "";
+      document.getElementById("thikana").value = "";
+      document.getElementById("followup").value = "";
+    }
+
+    function editKoro(position) {
+      var g = grahokera[position];
+
+      var notunNaam = prompt("নাম:", g.naam);
+      if (notunNaam === null) { return; }
+      if (notunNaam.trim() == "") {
+        alert("নাম খালি রাখা যাবে না");
+        return;
+      }
+
+      var notunPhone = prompt("ফোন নম্বর:", g.phone || "");
+      if (notunPhone === null) { return; }
+
+      var notunEmail = prompt("ইমেইল:", g.email || "");
+      if (notunEmail === null) { return; }
+
+      var notunThikana = prompt("ঠিকানা:", g.thikana || "");
+      if (notunThikana === null) { return; }
+
+      g.naam = notunNaam.trim();
+      g.phone = notunPhone.trim();
+      g.email = notunEmail.trim();
+      g.thikana = notunThikana.trim();
+      sheveKoro();
+    }
+
+    function followupBodlao(position, notunTarikh) {
+      grahokera[position].followup = notunTarikh;
+      sheveKoro();
+    }
+
+    function noteJog(position) {
+      var lekha = document.getElementById("note" + position).value;
+      if (lekha == "") {
+        alert("নোট লিখুন");
+        return;
+      }
+      if (!grahokera[position].notes) {
+        grahokera[position].notes = [];
+      }
+      grahokera[position].notes.push({ lekha: lekha, tarikh: ajkerTarikh() });
+      sheveKoro();
+    }
+
+    function statusBodlao(position, notunStatus) {
+      grahokera[position].status = notunStatus;
+      sheveKoro();
+    }
+
+    function muchhe(position) {
+      if (confirm("সত্যিই মুছে ফেলবেন?")) {
+        grahokera.splice(position, 1);
+        sheveKoro();
+      }
+    }
+
+    function failDownload(lekha, fileNaam, dhoron) {
+      var blob = new Blob([lekha], { type: dhoron });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = fileNaam;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function backupNao() {
+      var lekha = JSON.stringify(grahokera, null, 2);
+      failDownload(lekha, "crm-backup-" + ajkerTarikh() + ".json", "application/json");
+    }
+
+    function csvGhor(lekha) {
+      lekha = String(lekha === undefined || lekha === null ? "" : lekha);
+      return '"' + lekha.replace(/"/g, '""') + '"';
+    }
+
+    function excelEksport() {
+      if (grahokera.length == 0) {
+        alert("এক্সপোর্ট করার মতো কোনো গ্রাহক নেই");
+        return;
+      }
+
+      var shirshak = ["নাম", "ফোন", "ইমেইল", "ঠিকানা", "স্ট্যাটাস", "পরবর্তী ফলো-আপ", "নোটসমূহ"];
+      var sarigulo = [shirshak.map(csvGhor).join(",")];
+
+      for (var i = 0; i < grahokera.length; i++) {
+        var g = grahokera[i];
+        if (!g) continue;
+
+        var notes = g.notes || [];
+        var noteLekha = [];
+        for (var k = 0; k < notes.length; k++) {
+          noteLekha.push(notes[k].tarikh + ": " + notes[k].lekha);
+        }
+
+        var phoneGhor = g.phone ? '="' + g.phone + '"' : "";
+
+        var sari = [
+          csvGhor(g.naam),
+          csvGhor(phoneGhor),
+          csvGhor(g.email),
+          csvGhor(g.thikana),
+          csvGhor(g.status || "নতুন লিড"),
+          csvGhor(g.followup),
+          csvGhor(noteLekha.join(" | "))
+        ];
+        sarigulo.push(sari.join(","));
+      }
+
+      var csv = "\uFEFF" + sarigulo.join("\r\n");
+      failDownload(csv, "crm-grahok-" + ajkerTarikh() + ".csv", "text/csv;charset=utf-8");
+    }
+
+    function phireAno(event) {
+      var file = event.target.files[0];
+      if (!file) { return; }
+
+      var reader = new FileReader();
+      reader.onload = function () {
+        try {
+          var tothya = JSON.parse(reader.result);
+          if (!Array.isArray(tothya)) {
+            throw new Error("ভুল ফাইল");
+          }
+          if (confirm("এখনকার সব তথ্য মুছে ব্যাকআপের তথ্য বসানো হবে। ঠিক আছে?")) {
+            grahokera = tothya;
+            sheveKoro();
+            alert("তথ্য ফিরিয়ে আনা হয়েছে");
+          }
+        } catch (e) {
+          alert("ফাইলটি সঠিক ব্যাকআপ ফাইল নয়");
+        }
+        event.target.value = "";
+      };
+      reader.readAsText(file);
+    }
+  </script>
+</body>
+</html>
